@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BAGS X平台快速发币</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #fff, #f0f0f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            margin-bottom: 30px;
+        }
+        
+        .card-title {
+            font-size: 1.5rem;
+            color: #333;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .card-title i {
+            color: #667eea;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .input-with-icon {
+            position: relative;
+        }
+        
+        .input-with-icon i {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+        }
+        
+        .input-with-icon input {
+            padding-left: 45px;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .btn-twitter {
+            background: #1DA1F2;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+        }
+        
+        .token-preview {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .token-preview h3 {
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+        }
+        
+        .token-info {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        
+        .token-info p {
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .token-info span:first-child {
+            opacity: 0.9;
+        }
+        
+        .token-info span:last-child {
+            font-weight: 600;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .feature {
+            background: rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .feature i {
+            font-size: 24px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .progress-container {
+            margin-top: 20px;
+        }
+        
+        .progress-bar {
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress {
+            height: 100%;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .status {
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .modal-header h2 {
+            color: #333;
+        }
+        
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #999;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .links {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .link {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            color: #333;
+            text-decoration: none;
+            transition: background 0.3s;
+        }
+        
+        .link:hover {
+            background: #e9ecef;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-bolt"></i> BAGS X平台快速发币</h1>
+            <p>通过X平台快速创建和发射BSC代币，完全自动化</p>
+        </div>
+        
+        <div class="grid">
+            <div class="card">
+                <div class="card-title">
+                    <i class="fas fa-coins"></i>
+                    <span>创建新代币</span>
+                </div>
+                
+                <div class="form-group">
+                    <label>代币名称</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-tag"></i>
+                        <input type="text" id="tokenName" placeholder="例如：My Awesome Token">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>代币符号</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-hashtag"></i>
+                        <input type="text" id="tokenSymbol" placeholder="例如：MAT" maxlength="6">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>X平台用户名</label>
+                    <div class="input-with-icon">
+                        <i class="fab fa-twitter"></i>
+                        <input type="text" id="twitterHandle" placeholder="@yourusername">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label>初始流动性 (BNB)</label>
+                    <div class="input-with-icon">
+                        <i class="fas fa-wallet"></i>
+                        <input type="number" id="liquidity" placeholder="0.1" step="0.01" min="0.1">
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        最低 0.1 BNB + 0.1 BNB 创建费
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label>代币特性</label>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="autoLock" checked style="width: auto; margin-right: 8px;">
+                            自动锁仓
+                        </label>
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="autoTrading" checked style="width: auto; margin-right: 8px;">
+                            自动交易
+                        </label>
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="antiBot" checked style="width: auto; margin-right: 8px;">
+                            防机器人
+                        </label>
+                        <label style="display: flex; align-items: center;">
+                            <input type="checkbox" id="autoLP" checked style="width: auto; margin-right: 8px;">
+                            自动流动性
+                        </label>
+                    </div>
+                </div>
+                
+                <button class="btn" onclick="createToken()">
+                    <i class="fas fa-rocket"></i>
+                    创建并发射代币
+                </button>
+                
+                <div class="progress-container" id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress" id="progressBar"></div>
+                    </div>
+                    <div class="status">
+                        <span id="currentStep">准备中...</span>
+                        <span id="progressText">0%</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="token-preview">
+                <h3>代币预览</h3>
+                <div class="token-info">
+                    <p>
+                        <span>名称:</span>
+                        <span id="previewName">-</span>
+                    </p>
+                    <p>
+                        <span>符号:</span>
+                        <span id="previewSymbol">-</span>
+                    </p>
+                    <p>
+                        <span>总供应量:</span>
+                        <span>1,000,000,000</span>
+                    </p>
+                    <p>
+                        <span>初始流动性:</span>
+                        <span id="previewLiquidity">- BNB</span>
+                    </p>
+                    <p>
+                        <span>创建者:</span>
+                        <span id="previewCreator">-</span>
+                    </p>
+                </div>
+                
+                <div class="features">
+                    <div class="feature">
+                        <i class="fas fa-lock"></i>
+                        <div>流动性锁定</div>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-shield-alt"></i>
+                        <div>防狙击</div>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-chart-line"></i>
+                        <div>自动发射</div>
+                    </div>
+                    <div class="feature">
+                        <i class="fas fa-bolt"></i>
+                        <div>快速创建</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">
+                <i class="fas fa-history"></i>
+                <span>最近创建的代币</span>
+            </div>
+            <div id="recentTokens"></div>
+        </div>
+    </div>
+    
+    <div class="modal" id="successModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🎉 代币创建成功！</h2>
+                <button class="close-modal" onclick="closeModal()">&times;</button>
+            </div>
+            
+            <div class="success-message" id="successMessage">
+                代币已成功创建并部署到BSC网络！
+            </div>
+            
+            <div class="token-info">
+                <p><span>合约地址:</span> <span id="modalAddress">-</span></p>
+                <p><span>交易哈希:</span> <span id="modalTxHash">-</span></p>
+                <p><span>创建时间:</span> <span id="modalTime">-</span></p>
+            </div>
+            
+            <div class="links">
+                <a href="#" class="link" id="bscscanLink" target="_blank">
+                    <i class="fas fa-external-link-alt"></i>
+                    在BSCScan查看
+                </a>
+                <a href="#" class="link" id="pancakeLink" target="_blank">
+                    <i class="fas fa-exchange-alt"></i>
+                    在PancakeSwap交易
+                </a>
+                <a href="#" class="link" id="dextoolsLink" target="_blank">
+                    <i class="fas fa-chart-bar"></i>
+                    在DEXTools查看图表
+                </a>
+                <a href="#" class="link" onclick="shareOnTwitter()">
+                    <i class="fab fa-twitter"></i>
+                    在X平台分享
+                </a>
+            </div>
+            
+            <button class="btn" style="margin-top: 20px;" onclick="closeModal()">
+                完成
+            </button>
+        </div>
+    </div>
+    
+    <div class="modal" id="twitterModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🤖 X平台创建</h2>
+                <button class="close-modal" onclick="closeTwitterModal()">&times;</button>
+            </div>
+            
+            <p>您也可以通过X平台快速创建代币：</p>
+            
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <code style="color: #333; font-size: 14px;">
+                    @BagsBot 创建代币 [名称] [符号]
+                </code>
+            </div>
+            
+            <p>例如：</p>
+            <div style="background: #e8f4f8; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <code style="color: #333; font-size: 14px;">
+                    @BagsBot 创建代币 MyToken MYK
+                </code>
+            </div>
+            
+            <button class="btn btn-twitter" onclick="openTwitter()">
+                <i class="fab fa-twitter"></i>
+                前往X平台创建
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        // 初始化Web3
+        let web3;
+        let factoryContract;
+        let userAccount;
+        
+        // 合约地址和ABI
+        const FACTORY_ADDRESS = '0xYourFactoryAddress';
+        const FACTORY_ABI = [...]; // 工厂合约ABI
+        
+        // 更新预览
+        document.getElementById('tokenName').addEventListener('input', updatePreview);
+        document.getElementById('tokenSymbol').addEventListener('input', updatePreview);
+        document.getElementById('twitterHandle').addEventListener('input', updatePreview);
+        document.getElementById('liquidity').addEventListener('input', updatePreview);
+        
+        function updatePreview() {
+            const name = document.getElementById('tokenName').value || '-';
+            const symbol = document.getElementById('tokenSymbol').value || '-';
+            const twitter = document.getElementById('twitterHandle').value || '-';
+            const liquidity = document.getElementById('liquidity').value || '0';
+            
+            document.getElementById('previewName').textContent = name;
+            document.getElementById('previewSymbol').textContent = symbol.toUpperCase();
+            document.getElementById('previewCreator').textContent = twitter;
+            document.getElementById('previewLiquidity').textContent = liquidity + ' BNB';
+        }
+        
+        // 连接钱包
+        async function connectWallet() {
+            if (typeof window.ethereum !== 'undefined') {
+                try {
+                    const accounts = await ethereum.request({ method: 'eth_requestAccounts' });
+                    userAccount = accounts[0];
+                    web3 = new Web3(window.ethereum);
+                    
+                    // 初始化合约
+                    factoryContract = new web3.eth.Contract(FACTORY_ABI, FACTORY_ADDRESS);
+                    
+                    return true;
+                } catch (error) {
+                    console.error('连接钱包失败:', error);
+                    return false;
+                }
+            } else {
+                alert('请安装MetaMask钱包');
+                return false;
+            }
+        }
+        
+        // 创建代币
+        async function createToken() {
+            const tokenName = document.getElementById('tokenName').value;
+            const tokenSymbol = document.getElementById('tokenSymbol').value;
+            const twitterHandle = document.getElementById('twitterHandle').value;
+            const liquidity = document.getElementById('liquidity').value;
+            
+            if (!tokenName || !tokenSymbol || !twitterHandle || !liquidity) {
+                alert('请填写所有字段');
+                return;
+            }
+            
+            if (!await connectWallet()) {
+                return;
+            }
+            
+            // 显示进度条
+            document.getElementById('progressContainer').style.display = 'block';
+            updateProgress(0, '准备中...');
+            
+            try {
+                // 步骤1: 注册X用户
+                updateProgress(20, '注册X用户...');
+                await registerTwitterUser(twitterHandle);
+                
+                // 步骤2: 创建代币
+                updateProgress(40, '创建代币合约...');
+                const result = await createTokenContract(
+                    twitterHandle,
+                    tokenName,
+                    tokenSymbol,
+                    liquidity
+                );
+                
+                // 步骤3: 配置代币
+                updateProgress(60, '配置代币参数...');
+                await configureToken(result.tokenAddress);
+                
+                // 步骤4: 启用交易
+                updateProgress(80, '启用交易...');
+                await enableTrading(result.tokenAddress);
+                
+                // 完成
+                updateProgress(100, '完成！');
+                
+                // 显示成功模态框
+                showSuccessModal(result);
+                
+            } catch (error) {
+                console.error('创建失败:', error);
+                alert('创建失败: ' + error.message);
+            }
+        }
+        
+        function updateProgress(percentage, step) {
+            document.getElementById('progressBar').style.width = percentage + '%';
+            document.getElementById('progressText').textContent = percentage + '%';
+            document.getElementById('currentStep').textContent = step;
+        }
+        
+        async function registerTwitterUser(twitterHandle) {
+            // 调用合约注册用户
+            const tx = await factoryContract.methods.registerTwitterUser(twitterHandle)
+                .send({ from: userAccount });
+            return tx;
+        }
+        
+        async function createTokenContract(twitterHandle, name, symbol, liquidity) {
+            const weiAmount = web3.utils.toWei(liquidity, 'ether');
+            const creationFee = await factoryContract.methods.creationFee().call();
+            const totalValue = parseInt(creationFee) + parseInt(weiAmount);
+            
+            const tx = await factoryContract.methods.createTokenForTwitterUser(
+                twitterHandle,
+                name,
+                symbol,
+                weiAmount
+            ).send({
+                from: userAccount,
+                value: totalValue,
+                gas: 2000000
+            });
+            
+            // 解析事件获取代币地址
+            const event = tx.events.TokenCreatedViaTwitter;
+            return {
+                tokenAddress: event.returnValues.token,
+                txHash: tx.transactionHash
+            };
+        }
+        
+        async function configureToken(tokenAddress) {
+            // 这里可以添加额外的配置步骤
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+        async function enableTrading(tokenAddress) {
+            // 这里调用代币合约的enableTrading方法
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        
+        function showSuccessModal(result) {
+            document.getElementById('modalAddress').textContent = result.tokenAddress;
+            document.getElementById('modalTxHash').textContent = result.txHash;
+            document.getElementById('modalTime').textContent = new Date().toLocaleString();
+            
+            // 设置链接
+            document.getElementById('bscscanLink').href = 
+                `https://bscscan.com/token/${result.tokenAddress}`;
+            document.getElementById('pancakeLink').href = 
+                `https://pancakeswap.finance/swap?outputCurrency=${result.tokenAddress}`;
+            document.getElementById('dextoolsLink').href = 
+                `https://www.dextools.io/app/bsc/pair-explorer/${result.tokenAddress}`;
+            
+            document.getElementById('successModal').style.display = 'flex';
+        }
+        
+        function closeModal() {
+            document.getElementById('successModal').style.display = 'none';
+            // 重置表单
+            document.getElementById('tokenName').value = '';
+            document.getElementById('tokenSymbol').value = '';
+            document.getElementById('twitterHandle').value = '';
+            document.getElementById('liquidity').value = '0.1';
+            document.getElementById('progressContainer').style.display = 'none';
+            updatePreview();
+        }
+        
+        function shareOnTwitter() {
+            const name = document.getElementById('tokenName').value;
+            const symbol = document.getElementById('tokenSymbol').value;
+            const address = document.getElementById('modalAddress').textContent;
+            
+            const text = `🚀 我刚刚通过 @BagsBot 创建了 ${name} (${symbol}) 代币！\n\n` +
+                        `合约地址: ${address}\n` +
+                        `#BSC #BAGS #Crypto`;
+            
+            const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+            window.open(url, '_blank');
+        }
+        
+        function openTwitterModal() {
+            document.getElementById('twitterModal').style.display = 'flex';
+        }
+        
+        function closeTwitterModal() {
+            document.getElementById('twitterModal').style.display = 'none';
+        }
+        
+        function openTwitter() {
+            window.open('https://twitter.com/messages/compose?recipient_id=BagsBot', '_blank');
+        }
+        
+        // 加载最近创建的代币
+        async function loadRecentTokens() {
+            try {
+                const response = await fetch('/api/recent-tokens');
+                const tokens = await response.json();
+                
+                const container = document.getElementById('recentTokens');
+                container.innerHTML = tokens.map(token => `
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${token.name} (${token.symbol})</strong>
+                                <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                                    @${token.twitter} • ${new Date(token.timestamp).toLocaleDateString()}
+                                </div>
+                            </div>
+                            <div>
+                                <a href="https://bscscan.com/token/${token.address}" target="_blank" 
+                                   style="color: #667eea; text-decoration: none;">
+                                    查看
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('加载失败:', error);
+            }
+        }
+        
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', function() {
+            updatePreview();
+            loadRecentTokens();
+            
+            // 添加Twitter按钮
+            const createButton = document.querySelector('.btn');
+            const twitterButton = document.createElement('button');
+            twitterButton.className = 'btn btn-twitter';
+            twitterButton.style.marginTop = '15px';
+            twitterButton.innerHTML = '<i class="fab fa-twitter"></i> 通过X平台创建';
+            twitterButton.onclick = openTwitterModal;
+            createButton.parentNode.insertBefore(twitterButton, createButton.nextSibling);
+        });
+    </script>
+</body>
+</html>
