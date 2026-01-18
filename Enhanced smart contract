@@ -1,0 +1,459 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+// X平台快速发币工厂合约
+contract XTokenFactory {
+    address public owner;
+    address public feeCollector;
+    
+    uint256 public creationFee = 0.1 ether;
+    uint256 public minLiquidity = 0.1 ether;
+    
+    // X平台用户映射
+    mapping(string => UserInfo) public twitterUsers;
+    mapping(address => string) public addressToTwitter;
+    
+    struct UserInfo {
+        address wallet;
+        uint256 tokenCount;
+        uint256 lastCreation;
+        bool isWhitelisted;
+    }
+    
+    struct TokenCreation {
+        address token;
+        string twitterHandle;
+        uint256 timestamp;
+        uint256 liquidity;
+    }
+    
+    TokenCreation[] public allCreations;
+    mapping(string => TokenCreation[]) public userCreations;
+    
+    event TokenCreatedViaTwitter(
+        address indexed token,
+        string indexed twitterHandle,
+        string name,
+        string symbol,
+        uint256 liquidity
+    );
+    
+    event TwitterUserRegistered(
+        string indexed twitterHandle,
+        address indexed wallet
+    );
+    
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+    
+    constructor() {
+        owner = msg.sender;
+        feeCollector = msg.sender;
+    }
+    
+    // 注册X平台用户
+    function registerTwitterUser(string memory twitterHandle) external {
+        require(bytes(twitterHandle).length > 0, "Invalid handle");
+        require(twitterUsers[twitterHandle].wallet == address(0), "Already registered");
+        
+        twitterUsers[twitterHandle] = UserInfo({
+            wallet: msg.sender,
+            tokenCount: 0,
+            lastCreation: 0,
+            isWhitelisted: true
+        });
+        
+        addressToTwitter[msg.sender] = twitterHandle;
+        
+        emit TwitterUserRegistered(twitterHandle, msg.sender);
+    }
+    
+    // X平台快速创建代币
+    function createTokenForTwitterUser(
+        string memory twitterHandle,
+        string memory name,
+        string memory symbol,
+        uint256 initialLiquidity
+    ) external payable returns (address) {
+        require(msg.value >= creationFee + initialLiquidity, "Insufficient funds");
+        require(initialLiquidity >= minLiquidity, "Liquidity too low");
+        
+        UserInfo storage user = twitterUsers[twitterHandle];
+        require(user.isWhitelisted, "User not whitelisted");
+        require(block.timestamp - user.lastCreation >= 1 hours, "Rate limited");
+        
+        // 转移费用
+        payable(feeCollector).transfer(creationFee);
+        
+        // 创建代币
+        XLaunchToken newToken = new XLaunchToken(
+            name,
+            symbol,
+            msg.sender,
+            twitterHandle,
+            initialLiquidity,
+            address(this)
+        );
+        
+        // 更新用户信息
+        user.tokenCount++;
+        user.lastCreation = block.timestamp;
+        
+        // 记录创建
+        TokenCreation memory creation = TokenCreation({
+            token: address(newToken),
+            twitterHandle: twitterHandle,
+            timestamp: block.timestamp,
+            liquidity: initialLiquidity
+        });
+        
+        allCreations.push(creation);
+        userCreations[twitterHandle].push(creation);
+        
+        emit TokenCreatedViaTwitter(
+            address(newToken),
+            twitterHandle,
+            name,
+            symbol,
+            initialLiquidity
+        );
+        
+        return address(newToken);
+    }
+    
+    // 批量创建（供机器人使用）
+    function batchCreateTokens(
+        string[] memory twitterHandles,
+        string[] memory names,
+        string[] memory symbols,
+        uint256[] memory liquidities
+    ) external payable onlyOwner {
+        require(twitterHandles.length == names.length, "Length mismatch");
+        require(names.length == symbols.length, "Length mismatch");
+        require(symbols.length == liquidities.length, "Length mismatch");
+        
+        uint256 totalCost = 0;
+        for (uint256 i = 0; i < liquidities.length; i++) {
+            totalCost += creationFee + liquidities[i];
+        }
+        
+        require(msg.value >= totalCost, "Insufficient funds");
+        
+        for (uint256 i = 0; i < twitterHandles.length; i++) {
+            createTokenForTwitterUser(
+                twitterHandles[i],
+                names[i],
+                symbols[i],
+                liquidities[i]
+            );
+        }
+    }
+    
+    // 设置费用
+    function setCreationFee(uint256 _fee) external onlyOwner {
+        creationFee = _fee;
+    }
+    
+    function setMinLiquidity(uint256 _min) external onlyOwner {
+        minLiquidity = _min;
+    }
+    
+    function setFeeCollector(address _collector) external onlyOwner {
+        feeCollector = _collector;
+    }
+    
+    function whitelistUser(string memory twitterHandle, bool status) external onlyOwner {
+        twitterUsers[twitterHandle].isWhitelisted = status;
+    }
+    
+    // 获取用户信息
+    function getUserInfo(string memory twitterHandle) external view returns (
+        address wallet,
+        uint256 tokenCount,
+        uint256 lastCreation,
+        bool isWhitelisted
+    ) {
+        UserInfo memory user = twitterUsers[twitterHandle];
+        return (
+            user.wallet,
+            user.tokenCount,
+            user.lastCreation,
+            user.isWhitelisted
+        );
+    }
+    
+    function getUserTokens(string memory twitterHandle) external view returns (address[] memory) {
+        TokenCreation[] memory creations = userCreations[twitterHandle];
+        address[] memory tokens = new address[](creations.length);
+        
+        for (uint256 i = 0; i < creations.length; i++) {
+            tokens[i] = creations[i].token;
+        }
+        
+        return tokens;
+    }
+    
+    function getTotalCreations() external view returns (uint256) {
+        return allCreations.length;
+    }
+}
+
+// X平台专用发射代币合约
+contract XLaunchToken {
+    string public name;
+    string public symbol;
+    uint8 public decimals = 18;
+    uint256 public totalSupply;
+    
+    address public creator;
+    string public creatorTwitter;
+    address public factory;
+    
+    address public pancakePair;
+    IPancakeRouter public pancakeRouter;
+    
+    bool public tradingEnabled = false;
+    uint256 public launchTime;
+    
+    // 代币分配
+    uint256 public liquidityPercentage = 60;
+    uint256 public creatorPercentage = 25;
+    uint256 public marketingPercentage = 10;
+    uint256 public burnPercentage = 5;
+    
+    // 交易税
+    uint256 public buyTax = 3;
+    uint256 public sellTax = 5;
+    uint256 public maxTxAmount;
+    uint256 public maxWalletAmount;
+    
+    mapping(address => uint256) public balances;
+    mapping(address => mapping(address => uint256)) public allowances;
+    
+    mapping(address => bool) public isExcludedFromFee;
+    mapping(address => bool) public isExcludedFromMaxTx;
+    
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+    event LiquidityAdded(uint256 tokenAmount, uint256 ethAmount);
+    event TradingEnabled(uint256 timestamp);
+    
+    constructor(
+        string memory _name,
+        string memory _symbol,
+        address _creator,
+        string memory _twitterHandle,
+        uint256 _initialLiquidity,
+        address _factory
+    ) {
+        name = _name;
+        symbol = _symbol;
+        creator = _creator;
+        creatorTwitter = _twitterHandle;
+        factory = _factory;
+        
+        totalSupply = 1_000_000_000 * 10**decimals;
+        
+        // 初始化PancakeSwap
+        pancakeRouter = IPancakeRouter(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+        
+        // 分配代币
+        uint256 liquidityAmount = (totalSupply * liquidityPercentage) / 100;
+        uint256 creatorAmount = (totalSupply * creatorPercentage) / 100;
+        uint256 marketingAmount = (totalSupply * marketingPercentage) / 100;
+        
+        balances[address(this)] = liquidityAmount + marketingAmount;
+        balances[_creator] = creatorAmount;
+        
+        // 创建交易对
+        pancakePair = IPancakeFactory(pancakeRouter.factory()).createPair(
+            address(this),
+            pancakeRouter.WETH()
+        );
+        
+        // 设置交易限制
+        maxTxAmount = totalSupply / 100; // 1%
+        maxWalletAmount = totalSupply / 50; // 2%
+        
+        // 排除地址
+        isExcludedFromFee[_creator] = true;
+        isExcludedFromFee[address(this)] = true;
+        isExcludedFromFee[_factory] = true;
+        
+        isExcludedFromMaxTx[_creator] = true;
+        isExcludedFromMaxTx[address(this)] = true;
+        
+        // 添加初始流动性
+        _addInitialLiquidity(_initialLiquidity);
+    }
+    
+    function _addInitialLiquidity(uint256 ethAmount) private {
+        require(ethAmount > 0, "No ETH provided");
+        
+        uint256 tokenAmount = balances[address(this)];
+        require(tokenAmount > 0, "No tokens for liquidity");
+        
+        // 批准代币
+        _approve(address(this), address(pancakeRouter), tokenAmount);
+        
+        // 添加流动性
+        (uint256 amountToken, uint256 amountETH, ) = pancakeRouter.addLiquidityETH{
+            value: ethAmount
+        }(
+            address(this),
+            tokenAmount,
+            0,
+            0,
+            address(this),
+            block.timestamp + 3600
+        );
+        
+        emit LiquidityAdded(amountToken, amountETH);
+    }
+    
+    function enableTrading() external {
+        require(msg.sender == factory, "Only factory can enable trading");
+        require(!tradingEnabled, "Trading already enabled");
+        
+        tradingEnabled = true;
+        launchTime = block.timestamp;
+        
+        emit TradingEnabled(block.timestamp);
+    }
+    
+    function transfer(address to, uint256 amount) external returns (bool) {
+        _transfer(msg.sender, to, amount);
+        return true;
+    }
+    
+    function _transfer(address from, address to, uint256 amount) internal {
+        require(amount > 0, "Transfer amount must be greater than zero");
+        require(balances[from] >= amount, "Insufficient balance");
+        
+        if (!tradingEnabled) {
+            require(from == creator || to == creator, "Trading not enabled");
+        }
+        
+        // 检查交易限制
+        if (!isExcludedFromMaxTx[from] && !isExcludedFromMaxTx[to]) {
+            require(amount <= maxTxAmount, "Amount exceeds max transaction");
+        }
+        
+        // 检查钱包限制
+        if (to != pancakePair && !isExcludedFromMaxTx[to]) {
+            require(balances[to] + amount <= maxWalletAmount, "Exceeds max wallet");
+        }
+        
+        uint256 taxAmount = 0;
+        
+        // 计算税费
+        if (!isExcludedFromFee[from] && !isExcludedFromFee[to]) {
+            if (from == pancakePair) { // 买入
+                taxAmount = (amount * buyTax) / 100;
+            } else if (to == pancakePair) { // 卖出
+                taxAmount = (amount * sellTax) / 100;
+            }
+        }
+        
+        // 执行转账
+        balances[from] -= amount;
+        
+        if (taxAmount > 0) {
+            uint256 netAmount = amount - taxAmount;
+            balances[to] += netAmount;
+            balances[address(this)] += taxAmount;
+            
+            emit Transfer(from, to, netAmount);
+            emit Transfer(from, address(this), taxAmount);
+        } else {
+            balances[to] += amount;
+            emit Transfer(from, to, amount);
+        }
+    }
+    
+    function approve(address spender, uint256 amount) external returns (bool) {
+        _approve(msg.sender, spender, amount);
+        return true;
+    }
+    
+    function _approve(address owner, address spender, uint256 amount) internal {
+        allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+    
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(allowances[from][msg.sender] >= amount, "Allowance exceeded");
+        
+        _transfer(from, to, amount);
+        allowances[from][msg.sender] -= amount;
+        
+        return true;
+    }
+    
+    // 获取代币信息（供X机器人显示）
+    function getTokenInfo() external view returns (
+        string memory tokenName,
+        string memory tokenSymbol,
+        string memory twitterCreator,
+        address tokenAddress,
+        uint256 supply,
+        uint256 liquidity
+    ) {
+        return (
+            name,
+            symbol,
+            creatorTwitter,
+            address(this),
+            totalSupply,
+            balances[pancakePair]
+        );
+    }
+    
+    // 获取交易链接
+    function getTradeLinks() external view returns (
+        string memory bscscan,
+        string memory pancakeswap,
+        string memory dextools
+    ) {
+        return (
+            string(abi.encodePacked("https://bscscan.com/token/", addressToString(address(this)))),
+            string(abi.encodePacked("https://pancakeswap.finance/swap?outputCurrency=", addressToString(address(this)))),
+            string(abi.encodePacked("https://www.dextools.io/app/bsc/pair-explorer/", addressToString(pancakePair)))
+        );
+    }
+    
+    function addressToString(address _addr) internal pure returns (string memory) {
+        bytes32 value = bytes32(uint256(uint160(_addr)));
+        bytes memory alphabet = "0123456789abcdef";
+        
+        bytes memory str = new bytes(42);
+        str[0] = '0';
+        str[1] = 'x';
+        for (uint256 i = 0; i < 20; i++) {
+            str[2 + i * 2] = alphabet[uint8(value[i + 12] >> 4)];
+            str[3 + i * 2] = alphabet[uint8(value[i + 12] & 0x0f)];
+        }
+        return string(str);
+    }
+    
+    receive() external payable {}
+}
+
+interface IPancakeRouter {
+    function factory() external pure returns (address);
+    function WETH() external pure returns (address);
+    function addLiquidityETH(
+        address token,
+        uint amountTokenDesired,
+        uint amountTokenMin,
+        uint amountETHMin,
+        address to,
+        uint deadline
+    ) external payable returns (uint amountToken, uint amountETH, uint liquidity);
+}
+
+interface IPancakeFactory {
+    function createPair(address tokenA, address tokenB) external returns (address pair);
+}
