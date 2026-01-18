@@ -1,0 +1,374 @@
+# main.py - 主要机器人服务
+import tweepy
+import asyncio
+import json
+import re
+from web3 import Web3
+from datetime import datetime
+from typing import Dict, Optional
+import logging
+
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class XTokenCreatorBot:
+    def __init__(self):
+        # Twitter/X API 配置
+        self.api_key = "your_api_key"
+        self.api_secret = "your_api_secret"
+        self.access_token = "your_access_token"
+        self.access_secret = "your_access_secret"
+        self.bearer_token = "your_bearer_token"
+        
+        # BSC网络配置
+        self.bsc_rpc = "https://bsc-dataseed.binance.org/"
+        self.web3 = Web3(Web3.HTTPProvider(self.bsc_rpc))
+        
+        # 合约地址
+        self.token_factory_address = "0xYourFactoryAddress"
+        self.token_factory_abi = [...]  # Factory ABI
+        
+        # 钱包配置
+        self.private_key = "your_private_key"
+        self.wallet_address = "your_wallet_address"
+        
+        # 初始化合约
+        self.factory_contract = self.web3.eth.contract(
+            address=self.token_factory_address,
+            abi=self.token_factory_abi
+        )
+        
+        # 初始化Twitter客户端
+        self.client = tweepy.Client(
+            bearer_token=self.bearer_token,
+            consumer_key=self.api_key,
+            consumer_secret=self.api_secret,
+            access_token=self.access_token,
+            access_token_secret=self.access_secret
+        )
+        
+        # 存储用户会话
+        self.user_sessions = {}
+        
+    def parse_tweet_command(self, text: str) -> Optional[Dict]:
+        """解析推文中的创建代币命令"""
+        patterns = [
+            r'创建代币\s+([A-Za-z0-9]+)\s+([A-Z]{3,6})',  # 中文
+            r'create token\s+([A-Za-z0-9]+)\s+([A-Z]{3,6})',  # 英文
+            r'代币:\s*([A-Za-z0-9]+)\s+符号:\s*([A-Z]{3,6})',
+            r'#发币\s+([A-Za-z0-9]+)\s+([A-Z]{3,6})',
+            r'#LaunchToken\s+([A-Za-z0-9]+)\s+([A-Z]{3,6})',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return {
+                    'name': match.group(1).strip(),
+                    'symbol': match.group(2).strip().upper()
+                }
+        return None
+    
+    async def process_mention(self, tweet):
+        """处理提及机器人的推文"""
+        try:
+            tweet_id = tweet.id
+            user_id = tweet.author_id
+            username = tweet.author.username
+            text = tweet.text
+            
+            logger.info(f"收到来自 @{username} 的推文: {text}")
+            
+            # 解析命令
+            token_info = self.parse_tweet_command(text)
+            if not token_info:
+                # 发送帮助信息
+                self.reply_with_help(tweet_id)
+                return
+            
+            # 检查用户是否已创建过代币
+            if await self.check_user_limit(user_id):
+                self.reply_error(tweet_id, "已达到每日创建限制")
+                return
+            
+            # 发送确认消息
+            confirm_tweet = self.client.create_tweet(
+                text=f"@{username} 确认创建代币 {token_info['name']} ({token_info['symbol']})？\n\n"
+                     f"请回复 '确认' 继续，或 '取消' 中止。\n"
+                     f"费用: 0.1 BNB + 初始流动性",
+                in_reply_to_tweet_id=tweet_id
+            )
+            
+            # 存储会话
+            self.user_sessions[user_id] = {
+                'token_info': token_info,
+                'confirm_tweet_id': confirm_tweet.data['id'],
+                'original_tweet_id': tweet_id,
+                'status': 'awaiting_confirmation'
+            }
+            
+        except Exception as e:
+            logger.error(f"处理推文时出错: {e}")
+    
+    async def process_confirmation(self, tweet):
+        """处理用户的确认回复"""
+        try:
+            user_id = tweet.author_id
+            text = tweet.text.lower()
+            
+            if user_id not in self.user_sessions:
+                return
+            
+            session = self.user_sessions[user_id]
+            
+            if '确认' in text or 'confirm' in text:
+                # 用户确认，开始创建代币
+                self.client.create_tweet(
+                    text=f"@{tweet.author.username} 正在创建代币，请稍候... ⏳",
+                    in_reply_to_tweet_id=session['original_tweet_id']
+                )
+                
+                # 创建代币
+                result = await self.create_token(session['token_info'], user_id)
+                
+                if result['success']:
+                    # 发送成功消息
+                    success_text = (
+                        f"✅ 代币创建成功！\n\n"
+                        f"名称: {result['name']}\n"
+                        f"符号: {result['symbol']}\n"
+                        f"合约地址: {result['address']}\n"
+                        f"BSCScan: https://bscscan.com/token/{result['address']}\n"
+                        f"PancakeSwap: https://pancakeswap.finance/swap?outputCurrency={result['address']}\n\n"
+                        f"💧 流动性已自动锁定\n"
+                        f"📊 代币信息已配置完成"
+                    )
+                    
+                    self.client.create_tweet(
+                        text=success_text,
+                        in_reply_to_tweet_id=session['original_tweet_id']
+                    )
+                    
+                    # 记录用户创建
+                    await self.record_user_creation(user_id)
+                    
+                else:
+                    # 发送错误消息
+                    self.client.create_tweet(
+                        text=f"❌ 创建失败: {result['error']}",
+                        in_reply_to_tweet_id=session['original_tweet_id']
+                    )
+                    
+                # 清理会话
+                del self.user_sessions[user_id]
+                
+            elif '取消' in text or 'cancel' in text:
+                self.client.create_tweet(
+                    text=f"@{tweet.author.username} 已取消代币创建",
+                    in_reply_to_tweet_id=session['original_tweet_id']
+                )
+                del self.user_sessions[user_id]
+                
+        except Exception as e:
+            logger.error(f"处理确认时出错: {e}")
+    
+    async def create_token(self, token_info: Dict, user_id: str) -> Dict:
+        """在BSC链上创建代币"""
+        try:
+            token_name = token_info['name']
+            token_symbol = token_info['symbol']
+            
+            # 默认参数
+            initial_liquidity = self.web3.to_wei(0.1, 'ether')  # 0.1 BNB
+            
+            # 构建交易
+            nonce = self.web3.eth.get_transaction_count(self.wallet_address)
+            
+            # 计算总费用（创建费 + 流动性）
+            creation_fee = self.factory_contract.functions.creationFee().call()
+            total_value = creation_fee + initial_liquidity
+            
+            # 创建交易
+            transaction = self.factory_contract.functions.createToken(
+                token_name,
+                token_symbol,
+                initial_liquidity
+            ).build_transaction({
+                'from': self.wallet_address,
+                'value': total_value,
+                'gas': 2000000,
+                'gasPrice': self.web3.to_wei('5', 'gwei'),
+                'nonce': nonce,
+                'chainId': 56  # BSC主网
+            })
+            
+            # 签名交易
+            signed_txn = self.web3.eth.account.sign_transaction(
+                transaction, self.private_key
+            )
+            
+            # 发送交易
+            tx_hash = self.web3.eth.send_raw_transaction(signed_txn.rawTransaction)
+            
+            # 等待交易确认
+            receipt = self.web3.eth.wait_for_transaction_receipt(tx_hash)
+            
+            # 解析日志获取代币地址
+            token_address = None
+            for log in receipt['logs']:
+                try:
+                    decoded = self.factory_contract.events.TokenCreated().process_log(log)
+                    if decoded:
+                        token_address = decoded['args']['token']
+                        break
+                except:
+                    continue
+            
+            if token_address:
+                # 自动配置代币
+                await self.configure_token(token_address, user_id)
+                
+                return {
+                    'success': True,
+                    'name': token_name,
+                    'symbol': token_symbol,
+                    'address': token_address,
+                    'tx_hash': tx_hash.hex()
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': '无法获取代币地址'
+                }
+                
+        except Exception as e:
+            logger.error(f"创建代币时出错: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    async def configure_token(self, token_address: str, user_id: str):
+        """自动配置代币参数"""
+        try:
+            # 加载代币合约ABI
+            token_abi = [...]  # 代币合约ABI
+            token_contract = self.web3.eth.contract(
+                address=token_address,
+                abi=token_abi
+            )
+            
+            # 启用交易
+            nonce = self.web3.eth.get_transaction_count(self.wallet_address)
+            
+            tx = token_contract.functions.enableTrading().build_transaction({
+                'from': self.wallet_address,
+                'gas': 200000,
+                'gasPrice': self.web3.to_wei('5', 'gwei'),
+                'nonce': nonce,
+                'chainId': 56
+            })
+            
+            signed = self.web3.eth.account.sign_transaction(tx, self.private_key)
+            self.web3.eth.send_raw_transaction(signed.rawTransaction)
+            
+            logger.info(f"已配置代币 {token_address}")
+            
+        except Exception as e:
+            logger.error(f"配置代币时出错: {e}")
+    
+    def reply_with_help(self, tweet_id: str):
+        """发送帮助信息"""
+        help_text = (
+            "🤖 BAGS快速发币机器人 🤖\n\n"
+            "使用方法:\n"
+            "1. 提及我并输入: 创建代币 [名称] [符号]\n"
+            "   例如: @BagsBot 创建代币 MyToken MYK\n\n"
+            "2. 我会回复确认信息\n"
+            "3. 回复'确认'开始创建\n\n"
+            "⚠️ 费用: 0.1 BNB + 初始流动性\n"
+            "✅ 自动锁定流动性\n"
+            "✅ 自动配置交易参数\n"
+            "✅ 自动上线PancakeSwap"
+        )
+        
+        try:
+            self.client.create_tweet(
+                text=help_text,
+                in_reply_to_tweet_id=tweet_id
+            )
+        except Exception as e:
+            logger.error(f"发送帮助信息时出错: {e}")
+    
+    def reply_error(self, tweet_id: str, error_msg: str):
+        """发送错误信息"""
+        try:
+            self.client.create_tweet(
+                text=f"❌ 错误: {error_msg}",
+                in_reply_to_tweet_id=tweet_id
+            )
+        except Exception as e:
+            logger.error(f"发送错误信息时出错: {e}")
+    
+    async def check_user_limit(self, user_id: str) -> bool:
+        """检查用户创建限制"""
+        # 实现用户限制逻辑，例如每天最多创建3个代币
+        # 这里可以集成数据库或缓存
+        return False
+    
+    async def record_user_creation(self, user_id: str):
+        """记录用户创建记录"""
+        # 实现记录逻辑
+        pass
+    
+    async def start_listening(self):
+        """开始监听推文"""
+        logger.info("启动推文监听服务...")
+        
+        # 获取初始推文ID
+        me = self.client.get_me()
+        my_id = me.data.id
+        
+        # 设置规则流
+        rules = [
+            {"value": f"@{me.data.username} 创建代币", "tag": "create_token"},
+            {"value": f"@{me.data.username} create token", "tag": "create_token_en"},
+            {"value": f"to:@{me.data.username} 确认", "tag": "confirmation"},
+            {"value": f"to:@{me.data.username} confirm", "tag": "confirmation_en"},
+        ]
+        
+        # 使用流式API监听
+        class TweetStream(tweepy.StreamingClient):
+            def __init__(self, bearer_token, bot_instance):
+                super().__init__(bearer_token)
+                self.bot = bot_instance
+            
+            async def on_tweet(self, tweet):
+                if tweet.referenced_tweets:
+                    # 回复推文
+                    await self.bot.process_confirmation(tweet)
+                else:
+                    # 新推文
+                    await self.bot.process_mention(tweet)
+        
+        stream = TweetStream(self.bearer_token, self)
+        
+        # 先删除现有规则
+        existing_rules = stream.get_rules().data
+        if existing_rules:
+            stream.delete_rules([rule.id for rule in existing_rules])
+        
+        # 添加新规则
+        stream.add_rules(rules)
+        
+        # 开始监听
+        stream.filter(
+            expansions=["author_id", "referenced_tweets.id"],
+            tweet_fields=["conversation_id", "created_at"]
+        )
+
+# 启动机器人
+if __name__ == "__main__":
+    bot = XTokenCreatorBot()
+    asyncio.run(bot.start_listening())
