@@ -1,0 +1,28 @@
+# deploy.sh - 部署脚本
+#!/bin/bash
+
+echo "🚀 开始部署BAGS X平台发币系统..."
+
+# 1. 安装依赖
+echo "📦 安装依赖..."
+npm install
+
+# 2. 编译合约
+echo "⚙️  编译智能合约..."
+npx hardhat compile
+
+# 3. 部署合约
+echo "📄 部署智能合约到BSC..."
+npx hardhat run scripts/deploy.js --network bsc
+
+# 4. 设置环境变量
+echo "🔧 设置环境变量..."
+cp .env.example .env
+
+# 5. 启动服务
+echo "🚀 启动服务器..."
+pm2 start server.js --name bags-bot
+
+echo "✅ 部署完成！"
+echo "📱 前端地址: http://your-domain.com"
+echo "🤖 Twitter机器人: @BagsBot"
